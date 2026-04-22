@@ -1,0 +1,22 @@
+[project]
+name = "movie-recommender"
+version = "0.1.0"
+description = "Conversational movie recommender with FAISS and Groq LLM"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "streamlit>=1.38.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "scikit-learn>=1.5.0",
+    "sentence-transformers>=3.1.0",
+    "faiss-cpu>=1.8.0",
+    "pyarrow>=17.0.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
+    "groq>=0.9.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = []   # This project is an application, not a library
