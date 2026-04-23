@@ -23,8 +23,4 @@ ENV PYTHONPATH=/app
 
 EXPOSE 7860
 
-<<<<<<< HEAD
 CMD uv run uvicorn api.main:app --host 0.0.0.0 --port 7860
-=======
-CMD uv run uvicorn api.main:app --host 0.0.0.0 --port 7860
->>>>>>> 63ca0c07fd29f2e7236430b9222f3fb27354dcc6
