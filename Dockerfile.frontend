@@ -9,8 +9,8 @@ RUN uv sync --frozen --no-dev
 
 COPY frontend/ ./frontend/
 
-ENV API_URL=http://api:8000
+ENV API_URL=http://api:8000   # will be overridden later
 
-EXPOSE 8501
+EXPOSE 7860
 
-CMD ["uv", "run", "streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD uv run streamlit run frontend/app.py --server.port=7860 --server.address=0.0.0.0
