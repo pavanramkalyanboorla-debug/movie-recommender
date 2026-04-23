@@ -1,3 +1,12 @@
+---
+title: Movie Mind API
+emoji: 🎬
+colorFrom: red
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
 #  MovieMind — Conversational Movie Recommender with AI Explanations
 
 **Understands what you *mean*, not just what you *type*.  
