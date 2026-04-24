@@ -1,46 +1,43 @@
 # syntax=docker/dockerfile:1
-
-# ------------------------------------------------------------
-# Stage 1: Build dependencies in a clean environment
-# ------------------------------------------------------------
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
-
-# Install uv (fast package manager)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-# Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install Python packages into a virtual environment.
-# The lock file already ensures CPU-only torch.
+# Install all dependencies (may include GPU torch transiently)
 RUN uv sync --frozen --no-dev --no-cache
 
-# ------------------------------------------------------------
-# Stage 2: Minimal production image
-# ------------------------------------------------------------
+# Replace torch with CPU-only version
+RUN uv run pip uninstall -y torch torchvision torchaudio 2>/dev/null || true
+RUN uv run pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Strip leftover NVIDIA packages
+RUN uv run pip uninstall -y nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 \
+    nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 \
+    nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 \
+    nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvjitlink-cu12 \
+    nvidia-nvtx-cu12 2>/dev/null || true
+
+
 FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# Install only the bare minimum to run Python
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
+# Minimal system dependency for FAISS
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the entire virtual environment from the builder
+# Copy the clean virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code and artifacts
 COPY recommender.py streamlit_app.py ./
 COPY artifacts/ ./artifacts/
 
-# Set environment variables
 ENV ARTIFACTS_DIR=/app/artifacts
 ENV PYTHONPATH=/app
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 7860
-
 CMD ["streamlit", "run", "streamlit_app.py", "--server.port=7860", "--server.address=0.0.0.0"]
