@@ -5,6 +5,7 @@ colorFrom: red
 colorTo: indigo
 sdk: docker
 app_port: 7860
+lfs: true
 pinned: false
 ---
 #  MovieMind — Conversational Movie Recommender with AI Explanations
