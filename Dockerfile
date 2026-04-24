@@ -9,7 +9,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies (CPU torch)
+# Install all dependencies, then replace torch with CPU-only version
 RUN uv sync --frozen --no-dev --no-cache \
     && uv run pip uninstall -y torch \
     && uv run pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
