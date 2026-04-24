@@ -9,19 +9,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies and force CPU torch
+# Install dependencies (CPU torch)
 RUN uv sync --frozen --no-dev --no-cache \
     && uv run pip uninstall -y torch \
     && uv run pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Copy application code
-COPY api/ ./api/
-
-# Create empty artifacts directory (bucket will be mounted here)
-RUN mkdir -p /app/artifacts
+# Copy application code and artifacts
+COPY recommender.py streamlit_app.py ./
+COPY artifacts/ ./artifacts/
 
 ENV ARTIFACTS_DIR=/app/artifacts
 ENV PYTHONPATH=/app
 EXPOSE 7860
 
-CMD uv run uvicorn api.main:app --host 0.0.0.0 --port 7860
+CMD ["uv", "run", "streamlit", "run", "streamlit_app.py", "--server.port=7860", "--server.address=0.0.0.0"]

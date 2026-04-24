@@ -23,6 +23,21 @@ def clean_title(title):
         return ""
     return re.sub(r'\s*\(\d{4}\)\s*$', '', str(title)).strip()
 
+def normalize_title(title):
+    """
+    Convert title like 'Fury, The' → 'The Fury'
+    Handles leading articles: 'The', 'A', 'An'
+    """
+    if pd.isna(title):
+        return ""
+    title = str(title).strip()
+    # Match titles that end with ', The', ', A', ', An'
+    import re
+    match = re.match(r'^(.*),\s*(The|A|An)$', title, re.IGNORECASE)
+    if match:
+        return f"{match.group(2)} {match.group(1)}"
+    return title
+
 
 def clean_genres(genre_str):
     """Remove noise tags like 'IMAX' and '(no genres listed)'."""
@@ -95,8 +110,7 @@ def main():
     df = df.rename(columns={'title_x': 'title', 'genres_x': 'genres'})
 
     # Clean title (remove year suffix)
-    df['title'] = df['title'].apply(clean_title)
-
+    df['title'] = df['title'].apply(clean_title).apply(normalize_title)
     # Extract year from release_date
     df['year'] = pd.to_datetime(df['release_date'], errors='coerce').dt.year
     df['year'] = df['year'].fillna(2000).astype(int)
