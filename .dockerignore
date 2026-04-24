@@ -28,3 +28,13 @@ data/*.csv
 
 # Docker compose
 docker-compose.yml
+__pycache__/
+*.py[cod]
+.venv/
+.git/
+.gitignore
+.env
+README.md
+images/
+screenshots/
+data/
