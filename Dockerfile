@@ -5,34 +5,25 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 COPY pyproject.toml uv.lock ./
 
-# Install all dependencies (may include GPU torch transiently)
+# Install all Python dependencies (GPU torch is okay on Spaces)
 RUN uv sync --frozen --no-dev --no-cache
 
-# Replace torch with CPU-only version
-RUN uv run pip uninstall -y torch torchvision torchaudio 2>/dev/null || true
-RUN uv run pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
-# Strip leftover NVIDIA packages
-RUN uv run pip uninstall -y nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 \
-    nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 \
-    nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 \
-    nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvjitlink-cu12 \
-    nvidia-nvtx-cu12 2>/dev/null || true
-
-
+# ----------------------------------------------------------------------------
 FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# Minimal system dependency for FAISS
+# Minimal system library for FAISS
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the clean virtual environment from builder
+# Copy the virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 
-# Copy application code and artifacts
+# Copy your application code
 COPY recommender.py streamlit_app.py ./
+
+# Copy the uploaded artifacts directly from the build context
 COPY artifacts/ ./artifacts/
 
 ENV ARTIFACTS_DIR=/app/artifacts

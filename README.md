@@ -1,52 +1,57 @@
 ---
-title: Movie Mind API
+title: MovieMind
 emoji: 🎬
 colorFrom: red
 colorTo: indigo
 sdk: docker
 app_port: 7860
-lfs: true
 pinned: false
 ---
-#  MovieMind — Conversational Movie Recommender with AI Explanations
 
-**Understands what you *mean*, not just what you *type*.  
-Tells you *why* each movie is right for you.**
+# 🎬 MovieMind — Conversational Movie Recommender with AI Explanations
+
+**Understands what you *mean*, not just what you *type.***  
+**Tells you *why* each movie is right for you.**
+
+<p align="center">
+  <a href="https://huggingface.co/spaces/PavanBoorla/movie-mind"><strong>🚀 Live Demo</strong></a>
+  ·
+  <a href="#-quick-start"><strong>⚡ Quick Start</strong></a>
+  ·
+  <a href="#-project-structure"><strong>📁 Project Structure</strong></a>
+  ·
+  <a href="#-how-it-works"><strong>🧠 Architecture</strong></a>
+</p>
 
 ---
 
-##  What is MovieMind?
+## ✨ What is MovieMind?
 
-MovieMind is a **production‑ready conversational recommendation system** that takes natural language queries like:
+Most movie recommenders force you into filters and dropdowns. MovieMind lets you **talk naturally**:
 
 > *"A mind‑bending sci‑fi movie like Inception, but not too violent"*  
 > *"Light‑hearted romantic comedies from the 90s"*  
 > *"Batman movies without the Joker"*
 
-It **retrieves** relevant movies from a large catalog, **ranks** them by quality and popularity, and **explains** each recommendation with a short, human‑readable sentence – powered by a large language model.
+It **retrieves** the most relevant movies from a large catalog, **ranks** them by quality and popularity, and **explains** each recommendation with an AI‑generated sentence that tells you **why** it was chosen.
+
+This isn't just a notebook — it's a **deployed, production‑style recommendation system**.
 
 ---
 
-##  Why This Project Stands Out
+## 🎯 Why This Project Stands Out
 
-Most movie recommenders are either:
-
-- **Keyword‑based** – fail on vague or descriptive queries  
-- **Black‑box** – give no justification for their choices  
-- **Academic only** – never leave the notebook  
-
-MovieMind bridges the gap between **research insights** and **deployable software**:
-
--  Two‑stage retrieval + ranking pipeline (industry best practice)  
--  Semantic search with FAISS and Sentence Transformers  
--  Hybrid scoring that balances relevance, rating, and popularity  
--  **Explainable AI** – Groq‑powered natural language justifications  
--  Clean web interface built with Streamlit  
--  Fully containerised with Docker, ready for cloud deployment  
+| Problem with typical recommenders | How MovieMind solves it |
+|-----------------------------------|--------------------------|
+| Keyword‑based — fail on vague queries | **Semantic search** with Sentence‑Transformers |
+| Black‑box — no justification | **Groq LLM** generates a human‑readable explanation for every recommendation |
+| Academic only — never deployed | **Live on Hugging Face Spaces**, Docker‑containerised |
+| Quality‑blind retrieval | **Two‑stage architecture** with hybrid scoring (similarity + rating + popularity) |
+| One‑size‑fits‑all ranking | **User‑adjustable weights** via the Streamlit sidebar |
 
 ---
 
-##  How It Works (Two‑Stage Architecture)
+## 🧠 How It Works (Two‑Stage Architecture)
 User Query (free text)\
 │\
 ▼\
@@ -72,103 +77,102 @@ User Query (free text)\
 ▼\
 Ranked list + explanations returned to UI
 
+
 ---
 
-##  Features
+## 🚀 Features
 
 | Feature | Description |
 |---------|-------------|
-| **Natural Language Understanding** | Groq parses user intent – genre, year, "not", "similar to", etc. |
-| **Semantic Search** | Sentence‑Transformers + FAISS index for sub‑second retrieval. |
-| **Hybrid Scoring** | Combines semantic similarity, average rating, and log‑scaled popularity. |
-| **Explainable Recommendations** | Each result includes a concise AI‑generated *why*. |
-| **Interactive Web UI** | Built with Streamlit – sliders for ranking weights, live results. |
-| **REST API** | FastAPI backend, ready for integration with other apps. |
-| **Docker Support** | Run the whole stack with one command. |
-| **Free‑tier Cloud Ready** | Deploy on Render, Hugging Face Spaces, or Railway. |
+| **Natural Language Understanding** | Groq Llama-3 extracts filters like genre, year, "not", and "similar to" from free‑text queries |
+| **Semantic Search** | Sentence‑Transformers (`all-MiniLM-L6-v2`) + FAISS index for sub‑second retrieval |
+| **Hybrid Scoring** | Combines semantic similarity, average rating, and log‑scaled popularity into a single score |
+| **Explainable AI** | Every recommendation includes a concise sentence explaining the match |
+| **Interactive UI** | Streamlit interface with sliders to adjust ranking weights in real‑time |
+| **Docker‑Ready** | Single `Dockerfile` builds the entire app — no separate API or database needed |
+| **Free‑Tier Deployed** | Live on Hugging Face Spaces (Docker runtime) — no cost, always on |
 
 ---
 
-##  Tech Stack
+## 🧰 Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| **Backend API** | FastAPI, Uvicorn |
 | **Frontend** | Streamlit |
 | **Embeddings** | Sentence‑Transformers (`all-MiniLM-L6-v2`) |
 | **Vector Search** | FAISS (Facebook AI Similarity Search) |
-| **LLM Integration** | Groq (Llama 3 / Mixtral) |
+| **LLM Integration** | Groq (Llama 3 8B) |
 | **Data Processing** | Pandas, NumPy, Scikit‑learn |
-| **Containerisation** | Docker, Docker Compose |
-| **Package Management** | `uv` (fast Python package installer) |
+| **Containerisation** | Docker |
+| **Package Management** | `uv` (fast Python package & project manager) |
+| **Deployment** | Hugging Face Spaces |
 
 ---
 
-##  Project Structure
+## 📁 Project Structure
 movie-recommender/\
 ├── .env.example # Template for API keys\
+├── .gitignore\
 ├── pyproject.toml # uv dependencies\
-├── docker-compose.yml\
-├── Dockerfile.api\
-├── Dockerfile.frontend\
+├── uv.lock # Locked dependency versions\
+├── Dockerfile # Multi‑stage Docker build\
+├── recommender.py # Core logic: loading artifacts, FAISS search, hybrid scoring\
+├── streamlit_app.py # Streamlit UI\
 ├── pipeline/\
-│ └── build_artifacts.py # Data preprocessing + FAISS index builder\
-├── api/\
-│ ├── init.py\
-│ └── main.py # FastAPI app with Groq integration\
-├── frontend/\
-│ └── app.py # Streamlit UI\
+│ └── build_artifacts.py # Data preprocessing + FAISS index + TF‑IDF vectorizer\
 ├── data/ # (gitignored) raw CSV files\
 └── artifacts/ # (gitignored) generated models & index
 
 ---
 
-##  Quick Start (Local with Docker)
+## ⚡ Quick Start (Local)
 
-### 1. Clone and prepare data
+### Prerequisites
+
+- Python ≥ 3.11
+- `uv` installed ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
+- Docker (optional, for containerised run)
+
+### Step 1 — Clone and add data
 
 ```bash
-git clone https://github.com/pavanramkalyanboorla-debug/movie-recommender
+git clone https://github.com/pavanramkalyanboorla-debug/movie-recommender.git
 cd movie-recommender
 ```
-Place the following CSV files in ./data/:
+Place these CSV files in the data/ folder:
 
-- ratings.csv (MovieLens)
+|File|	Source|
+|-----|-------|
+|ratings.csv|	MovieLens 20M|
+|movies.csv|	MovieLens 20M|
+|links.csv|	MovieLens 20M|
+|tmdb_5000_movies.csv|	TMDB 5000 on Kaggle|
 
-- movies.csv (MovieLens)
-
-- links.csv (MovieLens)
-
-- tmdb_5000_movies.csv (TMDB)
-
-### 2. Set your Groq API key
+### Step 2 — Set your Groq API key
 ```bash
-cp .env.example .env\
-Edit .env and add your Groq key\
+cp .env.example .env
+# Edit .env with your Groq key from https://console.groq.com
 ```
-### 3. Run the pipeline (generates FAISS index and processed data)
-``` bash
+
+### Step 3 — Run the pipeline
+This generates the processed data, FAISS index, and TF‑IDF vectorizer:
+```bash
 uv run python pipeline/build_artifacts.py
 ```
-### 4. Start the services
+⏳ This downloads the Sentence‑Transformer model and encodes all movies — may take a few minutes.
+### Step 4 — Launch the app
+Option A — Docker (recommended):
 ```bash
-docker-compose up --build
+docker build -t moviemind .
+docker run -p 7860:7860 --env-file .env moviemind
 ```
-### 5. Open the app
-👉 http://localhost:8501
-
-Running Without Docker (Development)
-If you prefer to run services directly:
-
+Option B — Direct with uv:
 ```bash
-# Terminal 1 – Backend
-export GROQ_API_KEY=your_key_here
-uv run uvicorn api.main:app --reload --port 8000
-
-# Terminal 2 – Frontend
-export API_URL=http://localhost:8000
-uv run streamlit run frontend/app.py
+uv run streamlit run streamlit_app.py
 ```
+Open http://localhost:7860 and start exploring movies.
+
+----
 | Example Queries to Try Query | What It Tests |
 |------|--------|
 |"Mind‑bending sci‑fi like Inception"	|Semantic similarity + genre understanding|
@@ -176,70 +180,79 @@ uv run streamlit run frontend/app.py
 |"Batman movies"	|Cast/character matching|
 |"Space movies before 2000"	|Year filtering|
 ----
-## Research Background: From Notebooks to Production
-### This production system is built on three detailed Jupyter notebooks that performed:
+### 📊 Evaluation & Research Background
+This project originated from three detailed Jupyter notebooks that explored:
 
-- Exploratory Data Analysis – sparsity, long‑tail, popularity bias
+- EDA — Ratings sparsity (99%+), long‑tail distribution, popularity bias
 
-- Retrieval Comparison – TF‑IDF vs. Sentence Transformers
+- Retrieval — TF‑IDF baseline vs. Sentence‑Transformer embeddings
 
-- Failure Mode Analysis – why embeddings alone can't handle "NOT"
+- Ranking — Hybrid scoring with ablation studies on similarity, rating, and popularity
 
-- Ablation Studies – proving each ranking signal matters
+---
+### Key findings from the research phase:
+- Semantic embeddings outperform TF‑IDF on descriptive queries like "mind‑bending psychological movies"
 
-- NDCG@10 Evaluation – achieving ~0.98 ranking quality
+- Logical constraints ("NOT", director, year range) require structured filtering on top of vector search
 
-### Key insights from the notebooks:
+- NDCG@10 ≈ 0.98 was achieved with the three‑signal hybrid scorer
 
-- Semantic search dramatically outperforms TF‑IDF on vague or descriptive queries.
+- Ablation study revealed that within a strong candidate pool, any reasonable combination of similarity, rating, and popularity yields high‑quality rankings
 
-- Within a strong candidate set, hybrid scoring with quality signals lifts the best movies to the top.
+- Robustness confirmed — varying weights from (0.6,0.2,0.2) to (0.4,0.3,0.3) changed NDCG by only ±0.005
 
-- The system is robust to weight choices – retrieval quality is the main driver.
+>The complete notebooks are available in the notebooks/ folder of this repository.
 
-- Logical constraints ("NOT", director, year) require structured filtering on top of embeddings.
+---
+### 🚢 Deployment
+Live demo: https://huggingface.co/spaces/PavanBoorla/movie-mind
 
-### The production code preserves all the logic from the notebooks while adding:
+The app is deployed as a Docker Space on Hugging Face. The artifacts (movies_processed_final.parquet, movies_faiss.index, tfidf_vectorizer.pkl) are bundled directly in the Space, so no external storage or network calls are needed at runtime.
 
-- FAISS for millisecond‑level retrieval
+---
+### Deploy your own instance:
+1. Fork this repository
 
-- Groq LLM for query parsing and explanation generation
+2. Upload your artifacts/ folder to a Hugging Face Space
 
-- FastAPI + Streamlit for a clean, interactive interface
+3. Add the Dockerfile, recommender.py, streamlit_app.py, pyproject.toml, uv.lock
 
-## Deployment on Free Cloud Tiers
-### MovieMind is designed to run on free cloud offerings:
+4. Add GROQ_API_KEY as a Space secret
 
-- Render – Deploy API and frontend as separate web services using the provided Dockerfiles.
+5. The Space builds and deploys automatically
+---
+### 🔮 Future Roadmap
+- User session history and personalised profiles
 
-- Hugging Face Spaces – Host the Streamlit frontend for free; point it to a Render‑hosted API.
+- Collaborative filtering integration for cold‑start users
 
-- Railway / Fly.io – Single‑command deploys with generous free allowances.
+- Poster images from TMDB API
 
-## Future Roadmap
-- User profiles and session history
+- Advanced query parsing: runtime, awards, language
 
-- Collaborative filtering integration
+- A/B testing framework for ranking weight optimisation
+---
 
-- Poster images from TMDB
+### 🙏 Acknowledgements
+- Data: MovieLens 20M (GroupLens Research) and TMDB 5000
 
-- More advanced query parsing (director, actor, runtime)
+- Embeddings: Sentence‑Transformers (all-MiniLM-L6-v2)
 
-- A/B testing framework for ranking weights
+- Vector Search: FAISS by Meta
 
-- Monitoring dashboard with Prometheus metrics
+- LLM: Groq for fast, free‑tier inference
 
-## Acknowledgements
-This project builds upon the MovieLens 20M dataset (GroupLens Research) and TMDB 5000 metadata.
-The two‑stage architecture and hybrid ranking approach were inspired by industry best practices from companies like Netflix and Spotify.
-Special thanks to the open‑source community behind Sentence‑Transformers, FAISS, and Groq.
+- Architecture inspiration: Two‑stage retrieval‑ranking patterns from Netflix, Spotify, and industry literature
 
-## License
-MIT – feel free to use, modify, and deploy this project for your own portfolio or production use.
+---
+### 📄 License
+MIT — use, modify, and deploy freely.
 
-## Author
-Boorla Pavan Ram Kalyan\
+---
+### 👤 Author
+Boorla Pavan Ram Kalyan
+
  https://github.com/pavanramkalyanboorla-debug • www.linkedin.com/in/pavan-ram-kalyan-boorla-0a3402405
 
-If you found this useful, a ⭐ on the repo means a lot!
-
+ ---
+ If you found this useful, a ⭐ on the repo means a lot! 🍿
