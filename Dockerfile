@@ -9,21 +9,22 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies and force CPU torch
+# Install dependencies (including huggingface_hub)
 RUN uv sync --frozen --no-dev --no-cache \
     && uv run pip uninstall -y torch \
     && uv run pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Copy application code
+# Copy application code and download script
 COPY api/ ./api/
-COPY start.sh ./
+COPY download_artifacts.py ./
 
-# Create artifacts directory and make start script executable
-RUN mkdir -p /app/artifacts && chmod +x start.sh
+# Create artifacts directory
+RUN mkdir -p /app/artifacts
 
 ENV ARTIFACTS_DIR=/app/artifacts
 ENV PYTHONPATH=/app
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
 EXPOSE 7860
 
-CMD ["./start.sh"]
+# Download artifacts then start API
+CMD uv run python download_artifacts.py && uv run uvicorn api.main:app --host 0.0.0.0 --port 7860
