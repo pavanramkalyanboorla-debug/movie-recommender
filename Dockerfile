@@ -14,13 +14,14 @@ RUN uv sync --frozen --no-dev --no-cache \
     && uv run pip uninstall -y torch \
     && uv run pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Copy application code
+# Copy application code (NO artifacts)
 COPY api/ ./api/
-COPY artifacts/ ./artifacts/
+
+# Create empty artifacts directory (bucket will be mounted here)
+RUN mkdir -p /app/artifacts
 
 ENV ARTIFACTS_DIR=/app/artifacts
 ENV PYTHONPATH=/app
-
 EXPOSE 7860
 
 CMD uv run uvicorn api.main:app --host 0.0.0.0 --port 7860
