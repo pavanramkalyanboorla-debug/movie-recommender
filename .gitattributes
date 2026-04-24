@@ -1,4 +1,0 @@
-artifacts/movies_faiss.index filter=lfs diff=lfs merge=lfs -text
-artifacts/*.index filter=lfs diff=lfs merge=lfs -text
-artifacts/movies_processed_final.parquet filter=lfs diff=lfs merge=lfs -text
-artifacts/tfidf_vectorizer.pkl filter=lfs diff=lfs merge=lfs -text
