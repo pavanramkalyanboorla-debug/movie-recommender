@@ -16,14 +16,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "requests>=2.32.0",
     "groq>=0.9.0",
-    "huggingface_hub>=0.28",
 ]
-
-[tool.hatch.build.targets.wheel]
-packages = []   # This project is an application, not a library
-
-
-
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
@@ -32,3 +25,6 @@ torch = { index = "pytorch-cpu" }
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = []
