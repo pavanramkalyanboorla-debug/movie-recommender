@@ -1,12 +1,12 @@
 """
-recommender.py - Core logic for the MovieMind recommender.
-Loads artifacts, processes queries, and returns ranked results with explanations.
+recommender.py - MovieMind core logic.
+Reliable rule‑based parsing + Groq enhancement, robust explanations, keyword‑aware ranking.
 """
 import os
-import json
 import re
 import time
 import logging
+import concurrent.futures
 import numpy as np
 import pandas as pd
 import faiss
@@ -19,212 +19,278 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ----------------------------------------------------------------------
-# Load artifacts once (module‑level)
-# ----------------------------------------------------------------------
 ARTIFACTS_DIR = os.environ.get("ARTIFACTS_DIR", "/app/artifacts")
 
+# Load artifacts
 df = pd.read_parquet(os.path.join(ARTIFACTS_DIR, "movies_processed_final.parquet"))
 index = faiss.read_index(os.path.join(ARTIFACTS_DIR, "movies_faiss.index"))
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-logger.info("✅ All artifacts loaded")
+
+logger.info("✅ Artifacts loaded")
 
 # ----------------------------------------------------------------------
-# Robust rule‑based exclusion — catches hyphens, slashes, etc.
+# 1. Robust Rule‑based Parser (always active, never fails)
 # ----------------------------------------------------------------------
-def rule_based_exclude(query: str) -> list:
-    """
-    Extracts exclusion keywords from the query.
-    Captures: without ..., not ..., no ...
-    The phrase may contain letters, spaces, hyphens, slashes, and digits.
-    Returns a list of lowercase phrases to exclude.
-    """
-    # List of trigger words (all lowercase for matching)
-    triggers = ['without', 'not', 'no']
-    query_lower = query.lower()
-    exclude_terms = []
+class RobustParser:
+    """Parses a free‑text movie query using token rules and common patterns."""
+    def __init__(self, query: str):
+        self.original = query
+        self.lower = query.lower()
+        self.tokens = re.findall(r"[a-z0-9]+(?:[-'][a-z0-9]+)*", self.lower)  # keep hyphens
+        self.result = {
+            'genre': None,
+            'year_min': None,
+            'year_max': None,
+            'exclude': [],
+            'must_include': [],
+            'similar_to': None,
+            'raw_query': query
+        }
+        self._parse()
 
-    # Find positions of trigger words
-    for trig in triggers:
-        # We'll find all occurrences of trigger followed by a phrase
-        idx = 0
-        while True:
-            pos = query_lower.find(trig, idx)
-            if pos == -1:
+    def _parse(self):
+        # ----- Exclusions: "without X", "not X", "no X" -----
+        triggers = ['without', 'not', 'no']
+        for trig in triggers:
+            # find trigger followed by something until conjunctions or end
+            # Use a token walker
+            for i, tok in enumerate(self.tokens):
+                if tok == trig:
+                    # collect until we hit: and, or, but, or a new trigger word
+                    phrase_parts = []
+                    j = i + 1
+                    while j < len(self.tokens) and self.tokens[j] not in ('and', 'or', 'but', 'without', 'not', 'no'):
+                        phrase_parts.append(self.tokens[j])
+                        j += 1
+                    if phrase_parts:
+                        # reconstruct original casing from original query slice? just use lower
+                        phrase = ' '.join(phrase_parts)
+                        self.result['exclude'].append(phrase)
+
+        # ----- "like X" or "similar to X" -----
+        for pattern in [r'like\s+([\w\s\-\']+?)(?:\s*(?:,|\.|!|\?|;|and|or|but)\s|$)', 
+                        r'similar\s+to\s+([\w\s\-\']+?)(?:\s*(?:,|\.|!|\?|;|and|or|but)\s|$)']:
+            m = re.search(pattern, self.lower)
+            if m:
+                candidate = m.group(1).strip()
+                if candidate and not any(trig in candidate for trig in triggers):
+                    self.result['similar_to'] = candidate
+                    break
+
+        # ----- "with X", "must include X" -----
+        for pattern in [r'must\s+include\s+([\w\s\-\']+?)(?:\s*(?:,|\.|!|\?|;|and|or|but)\s|$)', 
+                        r'with\s+([\w\s\-\']+?)(?:\s*(?:,|\.|!|\?|;|and|or|but)\s|$)']:
+            m = re.search(pattern, self.lower)
+            if m:
+                phrase = m.group(1).strip()
+                if phrase and not any(trig in phrase for trig in triggers):
+                    self.result['must_include'] = [phrase]
                 break
-            # Make sure it's a whole word (preceded by space or start, followed by space)
-            start_ok = (pos == 0 or not query_lower[pos-1].isalpha())
-            end_pos = pos + len(trig)
-            end_ok = (end_pos == len(query_lower) or not query_lower[end_pos].isalpha())
-            if start_ok and end_ok:
-                # Extract the phrase after the trigger, until a conjunction or ending punctuation
-                rest = query_lower[end_pos:].strip()
-                # Stop at words: and, or, but, or punctuation: . , ! ? ; :
-                stop_pattern = r'\b(?:and|or|but)\b|[.,!?;:]'
-                match = re.search(r'([^.,!?;:]+?)(?:\s*\b(?:and|or|but)\b|[.,!?;:])', rest)
-                if match:
-                    phrase = match.group(1).strip()
-                else:
-                    # No stop present, take whole rest of string
-                    phrase = rest
-                if phrase:
-                    exclude_terms.append(phrase)
-            idx = end_pos  # move past this trigger
 
-    # Remove duplicates while preserving order (last seen wins, but doesn't matter)
-    return list(set(exclude_terms))
+        # ----- Genre detection (simple list) -----
+        known_genres = {
+            'action', 'adventure', 'animation', 'comedy', 'crime', 'documentary',
+            'drama', 'fantasy', 'horror', 'mystery', 'romance', 'sci-fi', 'sci fi',
+            'thriller', 'war', 'western'
+        }
+        for genre in known_genres:
+            if genre in self.lower:
+                self.result['genre'] = genre
+                break
+
+        # ----- Year filters -----
+        m = re.search(r'(before|after|from|in the)\s+(\d{4})', self.lower)
+        if m:
+            rel, year = m.groups()
+            year = int(year)
+            if rel == 'before':
+                self.result['year_max'] = year - 1
+            elif rel == 'after':
+                self.result['year_min'] = year + 1
+            elif rel == 'from':
+                self.result['year_min'] = year
+            elif rel == 'in the':
+                decade = year - (year % 10)
+                self.result['year_min'] = decade
+                self.result['year_max'] = decade + 9
+
+        # Deduplicate excludes
+        self.result['exclude'] = list(set(self.result['exclude']))
+
+    def get_result(self):
+        return self.result
 
 # ----------------------------------------------------------------------
-# LLM query parsing (optional, adds structured filters)
+# 2. Groq enhancer (optional, runs after rules)
 # ----------------------------------------------------------------------
-def parse_query_with_llm(query: str) -> dict:
+def enhance_with_groq(rule_result: dict) -> dict:
+    """Call Groq to fill missing fields, but never override rule‑based exclusions."""
     if not groq_client:
-        return {"raw_query": query}
+        return rule_result
 
     system_prompt = """You are a movie recommendation query parser.
-Extract structured information from the user's natural language query.
-Return a JSON object with the following optional fields:
-- genre: string (e.g., "sci-fi", "comedy")
-- year_min: integer (earliest release year)
-- year_max: integer (latest release year)
-- must_include: list of keywords that MUST be in the movie description
-- exclude: list of keywords to avoid (e.g., "horror", "space")
-- similar_to: string (movie title to find similar movies)
-
-Examples:
-"a sci‑fi movie like Inception but not too violent" → {"genre": "sci-fi", "similar_to": "Inception", "exclude": ["violent"]}
-"movies like Avatar without aliens" → {"similar_to": "Avatar", "exclude": ["aliens"]}
-If a field is not present, omit it.
-"""
+Given the user's query, return a JSON object with any of these optional fields:
+- genre (string)
+- year_min (integer)
+- year_max (integer)
+- must_include (list of strings)
+- exclude (list of strings) – only if explicitly mentioned
+- similar_to (string)
+Do NOT overwrite exclusions already known."""
     try:
         response = groq_client.chat.completions.create(
             model="llama3-8b-8192",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
+                {"role": "user", "content": rule_result['raw_query']}
             ],
             temperature=0.1,
             response_format={"type": "json_object"},
-            max_tokens=200
+            max_tokens=150,
+            timeout=3.0
         )
-        return json.loads(response.choices[0].message.content)
+        llm = json.loads(response.choices[0].message.content)
+        # Merge: LLM can add new fields but cannot override existing non‑empty values
+        for key in ['genre', 'year_min', 'year_max', 'similar_to']:
+            if not rule_result.get(key) and key in llm:
+                rule_result[key] = llm[key]
+        # For must_include and exclude, merge if LLM provides additional
+        if 'must_include' in llm:
+            combined = set(rule_result.get('must_include', []) + llm['must_include'])
+            rule_result['must_include'] = list(combined)
+        if 'exclude' in llm and llm['exclude']:
+            # Rule exclusions always win, but we add LLM's if they don't conflict? Safer: only add if not already covered
+            # We'll keep only rule exclusions to guarantee reliability
+            pass
+        return rule_result
     except Exception as e:
-        logger.warning(f"LLM parse failed: {e}")
-        return {"raw_query": query}
+        logger.warning(f"Groq enhancer failed: {e}")
+        return rule_result
 
 # ----------------------------------------------------------------------
-# Explanation generation with retry + rate limit handling
+# 3. Reliable explanation generator (Groq with timeout + template fallback)
 # ----------------------------------------------------------------------
-def generate_explanation(movie_row, user_query: str, max_retries=2) -> str:
-    if not groq_client:
-        return f"Matches your interest in {user_query[:30]}..."
-
-    prompt = f"""User asked: "{user_query}"
+def generate_explanation(movie_row, parsed_query):
+    """Generate an explanation, first trying Groq, then falling back to a smart template."""
+    # Try Groq with a short timeout
+    if groq_client:
+        prompt = f"""User asked: "{parsed_query['raw_query']}"
 Recommended: "{movie_row['title']}" ({int(movie_row['year'])})
 Genres: {movie_row.get('genres', '')}
 Overview: {movie_row.get('overview', '')[:200]}
 Rating: {movie_row['avg_rating']:.1f}/10
-Write a single engaging sentence (max 20 words) that connects this movie to the user's request."""
-
-    for attempt in range(max_retries + 1):
+Write one short sentence (max 25 words) connecting this movie to the user's request."""
         try:
             response = groq_client.chat.completions.create(
                 model="llama3-8b-8192",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=60
+                max_tokens=60,
+                timeout=2.0
             )
             explanation = response.choices[0].message.content.strip()
             if explanation:
                 return explanation
         except Exception as e:
-            logger.warning(f"Explanation attempt {attempt+1} failed: {e}")
-            if attempt < max_retries:
-                time.sleep(1)  # brief pause before retry
-            else:
-                logger.error(f"All explanation retries exhausted for {movie_row['title']}")
+            logger.warning(f"Groq explanation failed for {movie_row['title']}: {e}")
 
-    return f"Matches your interest in {user_query[:30]}..."
+    # Fallback template (always works)
+    parts = []
+    if parsed_query.get('similar_to'):
+        parts.append(f"Similar to {parsed_query['similar_to']}")
+    if parsed_query.get('genre'):
+        parts.append(f"it's a {parsed_query['genre']} movie")
+    if not parts:
+        genres = movie_row.get('genres', '')
+        if genres:
+            parts.append(f"it's a {genres.lower()} film")
+        else:
+            parts.append("it matches your request")
+    prefix = "Recommended because " if len(parts) > 1 else ""
+    return prefix + ', '.join(parts) + '.'
 
 # ----------------------------------------------------------------------
-# Main recommendation function
+# 4. Core recommendation function
 # ----------------------------------------------------------------------
 def recommend(query, top_n=10, w_sim=0.6, w_rating=0.2, w_pop=0.2,
               use_llm_parse=True, generate_explanations=True):
-    """
-    Returns a list of dicts with movie recommendations.
-    """
-    # 1. Always apply rule‑based exclusion (fast and reliable)
-    rule_excludes = rule_based_exclude(query)
+    # Step A: Robust rule‑based parsing
+    parser = RobustParser(query)
+    parsed = parser.get_result()
 
-    # 2. Optionally enrich with LLM parsing (genre, year, etc.)
-    parsed = {}
+    # Step B: Optionally enhance with Groq (only if API key exists and user wants it)
     if use_llm_parse and groq_client:
-        parsed = parse_query_with_llm(query)
+        parsed = enhance_with_groq(parsed)
 
-    # 3. Merge exclusions
-    if rule_excludes:
-        if 'exclude' in parsed:
-            parsed['exclude'] = list(set(parsed['exclude'] + rule_excludes))
-        else:
-            parsed['exclude'] = rule_excludes
+    # Step C: Build enhanced embedding query
+    enhanced = query
+    if parsed.get('similar_to'):
+        enhanced += f" similar to {parsed['similar_to']}"
+    if parsed.get('must_include'):
+        enhanced += " " + " ".join(parsed['must_include'])
 
-    # 4. Enhance query for embedding
-    enhanced_query = query
-    if parsed.get("similar_to"):
-        enhanced_query += f" similar to {parsed['similar_to']}"
-    if parsed.get("must_include"):
-        enhanced_query += " " + " ".join(parsed["must_include"])
-
-    # 5. FAISS retrieval
-    query_vec = model.encode([enhanced_query]).astype('float32')
-    query_vec = np.ascontiguousarray(query_vec)
-    faiss.normalize_L2(query_vec)
-    scores, indices = index.search(query_vec, 200)
+    # Step D: FAISS retrieval
+    q_vec = model.encode([enhanced]).astype('float32')
+    q_vec = np.ascontiguousarray(q_vec)
+    faiss.normalize_L2(q_vec)
+    scores, indices = index.search(q_vec, 200)
     scores = scores[0]
     indices = indices[0]
 
     candidates = df.iloc[indices].copy()
     candidates['similarity'] = scores
 
-    # 6. Apply structured filters from parsed intent
-    if parsed and "raw_query" not in parsed:
-        if "genre" in parsed:
-            genre_filter = parsed["genre"].lower()
-            candidates = candidates[candidates['genres'].str.lower().str.contains(genre_filter, na=False)]
-        if "year_min" in parsed:
-            candidates = candidates[candidates['year'] >= parsed["year_min"]]
-        if "year_max" in parsed:
-            candidates = candidates[candidates['year'] <= parsed["year_max"]]
-        if "exclude" in parsed:
-            for term in parsed["exclude"]:
-                # Convert to lowercase once
-                term_lower = term.lower()
-                # Split into words and filter if ANY word appears
-                words = term_lower.split()
-                for word in words:
-                    if word:
-                        candidates = candidates[
-                            ~candidates['overview'].str.lower().str.contains(word, na=False) &
-                            ~candidates['title'].str.lower().str.contains(word, na=False)
-                        ]
-                # Also filter ignoring all spaces/hyphens/special characters
-                clean_term = re.sub(r'[^a-z0-9]', '', term_lower)
-                if clean_term:
-                    # Remove all non-alphanumeric from candidate strings for comparison
-                    candidates['_clean_overview'] = candidates['overview'].fillna('').str.lower().str.replace(r'[^a-z0-9]', '', regex=True)
-                    candidates['_clean_title'] = candidates['title'].str.lower().str.replace(r'[^a-z0-9]', '', regex=True)
-                    candidates = candidates[
-                        ~candidates['_clean_overview'].str.contains(re.escape(clean_term)) &
-                        ~candidates['_clean_title'].str.contains(re.escape(clean_term))
-                    ]
-                    # Drop temporary columns
-                    candidates.drop(['_clean_overview', '_clean_title'], axis=1, inplace=True)
+    # Step E: Apply year/genre/exclusion filters
+    if parsed.get('year_min'):
+        candidates = candidates[candidates['year'] >= parsed['year_min']]
+    if parsed.get('year_max'):
+        candidates = candidates[candidates['year'] <= parsed['year_max']]
+    if parsed.get('genre'):
+        genre = parsed['genre']
+        genre_variants = [genre, genre.replace('-', ' ').replace(' ', '-')]
+        mask = candidates['genres'].str.lower().str.contains('|'.join(genre_variants), na=False)
+        candidates = candidates[mask]
+    if parsed.get('exclude'):
+        for term in parsed['exclude']:
+            term_lower = term.lower()
+            # word‑level
+            for word in term_lower.split():
+                candidates = candidates[
+                    ~candidates['overview'].str.lower().str.contains(re.escape(word), na=False) &
+                    ~candidates['title'].str.lower().str.contains(re.escape(word), na=False)
+                ]
+            # cleaned (no spaces/hyphens)
+            clean = re.sub(r'[^a-z0-9]', '', term_lower)
+            if clean:
+                candidates['_clean_ov'] = candidates['overview'].fillna('').str.lower().str.replace(r'[^a-z0-9]', '', regex=True)
+                candidates['_clean_ti'] = candidates['title'].str.lower().str.replace(r'[^a-z0-9]', '', regex=True)
+                candidates = candidates[
+                    ~candidates['_clean_ov'].str.contains(re.escape(clean)) &
+                    ~candidates['_clean_ti'].str.contains(re.escape(clean))
+                ]
+                candidates.drop(['_clean_ov', '_clean_ti'], axis=1, inplace=True)
 
-    # 7. Hybrid scoring
+    # Step F: Keyword boost – give extra weight to movies containing query keywords
+    query_lower = query.lower()
+    stop_words = {'a', 'an', 'the', 'is', 'of', 'in', 'on', 'to', 'for', 'with',
+                  'and', 'or', 'but', 'not', 'no', 'without', 'like', 'movies', 'movie'}
+    q_words = set(re.findall(r'[a-z0-9]+', query_lower)) - stop_words
+    if q_words:
+        def kw_score(row):
+            soup = row.get('soup', '')
+            if not soup or pd.isna(soup):
+                return 0.0
+            soup_lower = soup.lower()
+            matches = sum(1 for w in q_words if w in soup_lower)
+            return matches / len(q_words)
+        candidates['kw_boost'] = candidates.apply(kw_score, axis=1)
+    else:
+        candidates['kw_boost'] = 0.0
+
+    # Step G: Hybrid scoring
     rating_norm = candidates['avg_rating'] / 10.0
     pop_max = candidates['popularity_log'].max() + 1e-8
     pop_norm = candidates['popularity_log'] / pop_max
@@ -232,33 +298,34 @@ def recommend(query, top_n=10, w_sim=0.6, w_rating=0.2, w_pop=0.2,
     candidates['hybrid_score'] = (
         w_sim * candidates['similarity'] +
         w_rating * rating_norm +
-        w_pop * pop_norm
+        w_pop * pop_norm +
+        0.1 * candidates['kw_boost']   # keyword boost weight
     )
+
     candidates = candidates.sort_values('hybrid_score', ascending=False).head(top_n)
 
-    # 8. Build results (with explanations if requested)
+    # Step H: Build results with explanations
     results = []
     for i, (_, row) in enumerate(candidates.iterrows()):
         item = {
             "title": row['title'],
             "year": row['year'],
             "genres": row.get('genres', ''),
-            "overview": row.get('overview', '')[:300] + "..." 
-                        if len(str(row.get('overview', ''))) > 300 
-                        else row.get('overview', ''),
+            "overview": str(row.get('overview', ''))[:300] + "..."
+                        if len(str(row.get('overview', ''))) > 300
+                        else str(row.get('overview', '')),
             "avg_rating": row['avg_rating'],
             "rating_count": int(row['rating_count']),
             "similarity": float(row['similarity']),
             "hybrid_score": float(row['hybrid_score']),
         }
-
         if generate_explanations:
-            if i > 0:
+            # Small delay to respect rate limits if using Groq
+            if i > 0 and groq_client:
                 time.sleep(0.6)
-            item['explanation'] = generate_explanation(row, query)
+            item['explanation'] = generate_explanation(row, parsed)
         else:
             item['explanation'] = None
-
         results.append(item)
 
     return results
