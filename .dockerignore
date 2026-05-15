@@ -16,11 +16,8 @@ ENV/
 # Data (raw CSVs should not be in the image)
 data/*.csv
 
-# Documentation / images / screenshots
-*.md
-*.png
-*.jpg
-*.jpeg
+# Notebooks
+notebooks/
 
 # Dotfiles
 .env
@@ -28,13 +25,17 @@ data/*.csv
 
 # Docker compose
 docker-compose.yml
-__pycache__/
-*.py[cod]
-.venv/
-.git/
-.gitignore
-.env
-README.md
+
+# Images / screenshots
 images/
 screenshots/
+*.png
+*.jpg
+*.jpeg
 data/
+.git/
+__pycache__/
+*.pyc
+.venv/
+logs/
+notebooks/

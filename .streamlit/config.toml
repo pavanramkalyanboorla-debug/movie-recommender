@@ -1,0 +1,6 @@
+[server]
+enableXsrfProtection = false
+enableCORS = false
+headless = true
+port = 7860
+maxUploadSize = 50
